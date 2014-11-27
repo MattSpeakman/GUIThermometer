@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+import time
+from Tkinter import *
+import tkMessageBox
+import ttk
+import RPi.GPIO as GPIO
+import os
+GPIO.setwarnings(False)
+GPIO.setmode(GPIO.BCM)
+
+ALARM = 17
+POWER = 27
+threshold = 30
+
+GPIO.setup(ALARM, GPIO.OUT)
+GPIO.setup(POWER, GPIO.IN)
+
+root = Tk()
+root.title("GUI Thermistor")
+
+mainframe = ttk.Frame(root, padding = "3 3 12 12")
+mainframe.grid(column=0, row=0, sticky=(N, W, E, S))
+mainframe.columnconfigure(0, weight=1)
+
+email = StringVar()
+thermistor = StringVar()
+setThreshold = StringVar()
+
+def Write():
+  setEmail = email.get()
+  setThresh = setThreshold.get()
+  setTherm = thermistor.get()
+  f=open("settings.txt", "a")
+  f.write("%s \n" % setEmail)
+  f.write("%s \n" % setThresh)
+  f.write("%s \n" % setTherm)
+  f.close()
+  fileMenu.delete(0,1)
+  setupButton = fileMenu.add_command(label="Setup", command=Setup, state=DISABLED)
+  resetButton = fileMenu.add_command(label="Reset", command=Reset)
+  root.update()
+
+def Setup():
+  filewin = Toplevel(root)
+  filewin.title("Setup")
+  Label(filewin, text="Email address:").grid(column=0, row=0, sticky = (N, E))
+  entry1 = Entry(filewin, textvariable = email).grid(column=1, row=0, sticky = (N, W))
+  Label(filewin, text="Threshold:").grid(column=0, row=1, sticky=E)
+  entry2 = Entry(filewin, textvariable = setThreshold).grid(column=1, row=1, sticky=W)
+  Label(filewin, text="Device Tag:").grid(column=0, row=2, sticky=W)
+  entry3 = Entry(filewin, textvariable = thermistor).grid(column=1, row=2, sticky=E)
+  buttonThis = Button(filewin, text="Confirm", command=Write).grid(column=0, row=3, sticky = (E, W))
+
+def Reset():
+  os.popen("sudo rm settings.txt")
+  fileMenu.delete(0,1)
+  setupButton = fileMenu.add_command(label="Setup", command=Setup)
+  resetButton = fileMenu.add_command(label="Reset", command=Reset, state=DISABLED)
+  root.update()
+
+menuBar = Menu(root)
+fileMenu = Menu(menuBar, tearoff=0)
+
+try:
+  f=open("settings.txt", "r")
+  f.close()
+  setupButton = fileMenu.add_command(label="Setup", command=Setup, state=DISABLED)
+  resetButton = fileMenu.add_command(label="Reset", command=Reset)
+except IOError:
+  setupButton = fileMenu.add_command(label="Setup", command=Setup)
+  resetButton = fileMenu.add_command(label="Reset", command=Reset, state=DISABLED)
+
+menuBar.add_cascade(label="File", menu=fileMenu)
+
+def PowerAlarm():
+  GPIO.output(ALARM, True)
+  time.sleep(0.5)
+  GPIO.output(ALARM, False)
+
+def PowerBool():
+  inputValue = GPIO.input(POWER)
+  if inputValue == False:
+    return "Ok"
+  elif inputValue == True:
+    return "Off"
+
+def Alarm():
+  GPIO.output(ALARM, True)
+  time.sleep(1)
+  GPIO.output(ALARM, False)
+
+def ReadTemp():
+  this = True
+
+  try:
+    f=open("settings.txt", "r")
+    IeMail = f.readline()
+    Ithreshold=f.readline()
+    Itherm=f.readline()
+  except IOError:
+    tkMessageBox.showinfo("Error", "Please run File-Setup")
+    this = False
+
+  while this:
+    inputState = PowerBool()
+    tfile = open ("/sys/bus/w1/devices/28-000005043dd1/w1_slave")
+    text = tfile.read()
+    tfile.close()
+    temperature=text.split()[-1]
+    theTemp=float(temperature[2:])
+    theTemp = theTemp / 1000
+    temp.set(theTemp)
+    power.set(inputState)
+#    quitButton = Button(mainframe, text="Quit", command=root.destroy).grid(column=0, row=5, sticky=(W, E))
+    root.update()
+    if theTemp > threshold:
+      Alarm()
+    if inputState == "Off":
+      PowerAlarm()
+
+temp = StringVar()
+power = StringVar()
+
+Label(mainframe, text="The current temperature is:").grid(column=0, row=0, sticky=(W, E))
+label = Label(mainframe, textvariable=temp).grid(column=0, row=1, sticky=(W, E))
+Label(mainframe, text="Power is: ").grid(column=0, row=4, sticky=W)
+powerLabel = Label(mainframe, textvariable=power).grid(column=0, row=4, sticky=E)
+
+button = Button(mainframe, text="Start", command=ReadTemp).grid(column=0, row=2, sticky=(W, E))
+
+for child in mainframe.winfo_children(): child.grid_configure(padx=5, pady=5)
+
+root.config(menu=menuBar)
+root.mainloop()
